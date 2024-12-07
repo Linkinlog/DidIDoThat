@@ -1,0 +1,54 @@
+services:
+  app:
+    container_name: app
+    build:
+      context: ./ass
+      dockerfile: ./Dockerfile
+    restart: always
+    ports:
+      - "8008:8008"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      - db
+    networks:
+      - didt
+  db:
+    container_name: db
+    image: postgres
+    restart: always
+    shm_size: 128mb
+    user: postgres
+    ports:
+      - "${SQUEAL_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    networks:
+      - didt
+  caddy:
+    container_name: caddy
+    image: caddy:latest
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./face/dist:/srv
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    depends_on:
+      - app
+    networks:
+      - didt
+volumes:
+  db-data:
+networks:
+  didt:
+    driver: bridge
