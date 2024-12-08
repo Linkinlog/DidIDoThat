@@ -1,13 +1,18 @@
 <script lang="ts">
+let { task, totalIntervals }: {task: Task} = $props();
+
 type Task = {
   name: string;
   description: string;
   interval: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
-  intervals_completed: number[];
+  intervals_map: Map<Date, boolean>;
 }
 
+let intervals_completed = Object.values(task.intervals_map).filter(Boolean);
+
 function intervalToActivityText(interval: Task["interval"]) {
-  switch (interval) {
+  const temp = interval.toLowerCase();
+  switch (temp) {
     case "hourly":
       return "hours";
     case "daily":
@@ -21,7 +26,10 @@ function intervalToActivityText(interval: Task["interval"]) {
   }
 }
 
-let { task, totalIntervals }: {task: Task} = $props();
+function toLocalTime(date: string) {
+	return new Date(date).toLocaleString();
+}
+
 </script>
 
 <div class="task">
@@ -36,14 +44,16 @@ let { task, totalIntervals }: {task: Task} = $props();
     </div>
   </div>
   <div class="task-activity">
-    {#each Array(totalIntervals).fill(0) as _, index}
+    {#each Object.entries(task.intervals_map) as [date, completed]}
       <div
-        class="activity-box"
-        class:completed={task.intervals_completed?.includes(index)}
-      ></div>
+        class="activity-box tooltip"
+        class:completed={completed}
+      >
+        <span class="tooltiptext">{toLocalTime(date)}</span>
+      </div>
     {/each}
   </div>
   <p class="activity-text">
-    {task.intervals_completed.length} of {totalIntervals} {intervalToActivityText(task.interval)} completed
+    {intervals_completed.length} of {totalIntervals} {intervalToActivityText(task.interval)} completed
   </p>
 </div>

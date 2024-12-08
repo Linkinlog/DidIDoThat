@@ -22,7 +22,6 @@ function createTask(e: Event) {
       name: name.value,
       description: description.value,
       interval: interval.value,
-      intervals_completed: [],
     }
   ];
 

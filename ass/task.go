@@ -11,12 +11,12 @@ type Task struct {
 }
 
 type TaskResponse struct {
-	ID                 int       `json:"id"`
-	Name               string    `json:"name"`
-	Description        string    `json:"description"`
-	CreatedAt          time.Time `json:"created_at"`
-	Interval           string    `json:"interval"`
-	IntervalsCompleted []int       `json:"intervals_completed"`
+	ID                 int                  `json:"id"`
+	Name               string               `json:"name"`
+	Description        string               `json:"description"`
+	CreatedAt          time.Time            `json:"created_at"`
+	Interval           string               `json:"interval"`
+	IntervalsMap       map[string]bool `json:"intervals_map"`
 }
 
 type Completion struct {
