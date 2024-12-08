@@ -3,7 +3,7 @@ type Task = {
   name: string;
   description: string;
   interval: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
-  intervalsCompleted: number[];
+  intervals_completed: number[];
 }
 
 function intervalToActivityText(interval: Task["interval"]) {
@@ -39,11 +39,11 @@ let { task, totalIntervals }: {task: Task} = $props();
     {#each Array(totalIntervals).fill(0) as _, index}
       <div
         class="activity-box"
-        class:completed={task.intervalsCompleted.includes(index)}
+        class:completed={task.intervals_completed?.includes(index)}
       ></div>
     {/each}
   </div>
   <p class="activity-text">
-    {task.intervalsCompleted.length} of {totalIntervals} {intervalToActivityText(task.interval)} completed
+    {task.intervals_completed.length} of {totalIntervals} {intervalToActivityText(task.interval)} completed
   </p>
 </div>

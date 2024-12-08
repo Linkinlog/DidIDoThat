@@ -5,6 +5,11 @@ let creatingTask = false;
 
 let tasks: Task[] = [];
 
+$: (async () => {
+  const response = await fetch('/api/tasks');
+  tasks = await response.json();
+})();
+
 function createTask(e: Event) {
   e.preventDefault();
   const form = e.target as HTMLFormElement;
@@ -17,9 +22,21 @@ function createTask(e: Event) {
       name: name.value,
       description: description.value,
       interval: interval.value,
-      intervalsCompleted: [1, 5, 10, 20],
+      intervals_completed: [],
     }
   ];
+
+  let url = new URL('/api/tasks', window.location.href);
+  url.searchParams.append('name', name.value);
+  url.searchParams.append('description', description.value);
+  url.searchParams.append('interval', interval.value);
+
+  fetch(url, { method: 'POST' });
+
+  // reset values
+  name.value = '';
+  description.value = '';
+  interval.value = '';
 }
 </script>
 

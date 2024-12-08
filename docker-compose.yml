@@ -10,7 +10,8 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - didt
   db:

@@ -1,7 +1,9 @@
 http://didt.test:80 {
     root * /srv
-    file_server
 
     reverse_proxy /api/* app:8008
+
+    file_server
+
 }
 
