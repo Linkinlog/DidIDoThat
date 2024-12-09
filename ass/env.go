@@ -7,3 +7,13 @@ func isProduction() bool {
 
 	return res == "production"
 }
+
+func databaseURL() string {
+	return os.Getenv("DATABASE_URL")
+}
+
+func isFirstRun() bool {
+	res := os.Getenv("FIRST_RUN")
+
+	return res == "true"
+}

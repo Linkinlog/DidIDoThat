@@ -10,15 +10,14 @@ let loggedIn = false;
 let tasks: Task[] = [];
 
 $: (async () => {
-  const response = await fetch('/api/tasks');
-  tasks = await response.json();
-})();
-
-$: (async () => {
   const response = await fetch('/api/auth/session');
   if (response.status >= 300) {
     return;
   }
+
+  const tasksResponse = await fetch('/api/tasks');
+  tasks = await tasksResponse.json();
+
   const { username } = await response.json();
   localStorage.setItem('username', username);
   loggedIn = true;

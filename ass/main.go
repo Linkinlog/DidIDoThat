@@ -2,21 +2,38 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var logger *slog.Logger
+
+func init() {
+	slogOpts := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+	logger = slog.New(slog.NewJSONHandler(os.Stdout, slogOpts))
+}
+
 func main() {
-	conn, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	conn, err := pgxpool.New(context.Background(), databaseURL())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
+		logger.Error("Unable to connect to database", "error", err.Error())
 		os.Exit(1)
 	}
 	defer conn.Close()
 
-	createTables(context.Background(), conn)
+	if isFirstRun() {
+		if err := createTables(context.Background(), conn); err != nil {
+			logger.Error("Unable to create tables", "error", err.Error())
+			os.Exit(1)
+		}
+	}
 
-	startHTTP(8008, conn)
+	if err := startHTTP(8008, conn); err != nil {
+		logger.Error("Unable to start HTTP server", "error", err.Error())
+		os.Exit(1)
+	}
 }

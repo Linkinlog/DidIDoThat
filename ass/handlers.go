@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,13 +19,14 @@ const (
 	previewLimit = 30
 )
 
-func startHTTP(port int, conn *pgxpool.Pool) {
+func startHTTP(port int, conn *pgxpool.Pool) error {
 	mux := http.NewServeMux()
 
 	// unauthorized
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		if err := conn.Ping(r.Context()); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			logger.Error("Unable to ping database", "error", err.Error())
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -40,9 +43,7 @@ func startHTTP(port int, conn *pgxpool.Pool) {
 	mux.HandleFunc("GET /api/auth/session", withUser(conn, handleSession()))
 	mux.HandleFunc("GET /api/auth/qr", withUser(conn, handleQR(conn)))
 
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), mux); err != nil {
-		panic(err)
-	}
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
 }
 
 func withUser(conn *pgxpool.Pool, h http.HandlerFunc) http.HandlerFunc {
@@ -50,18 +51,32 @@ func withUser(conn *pgxpool.Pool, h http.HandlerFunc) http.HandlerFunc {
 		cookie, err := r.Cookie("session_token")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
+			logger.Error("Unable to get cookie", "error", err.Error())
 			return
 		}
 
-		session := getSession(r.Context(), conn, cookie.Value)
+		session, err := getSession(r.Context(), conn, cookie.Value)
+		if err != nil {
+			logger.Error("Unable to get session", "error", err.Error())
+			http.Error(w, "Unable to get session", http.StatusInternalServerError)
+			return
+		}
 		if session.ID == 0 {
 			http.Error(w, "session not found", http.StatusUnauthorized)
+			logger.Error("Session not found", "error", "session not found")
 			return
 		}
 
-		user := getUserByID(r.Context(), conn, session.UserID)
+		user, err := getUserByID(r.Context(), conn, session.UserID)
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) && err.Error() != "no rows in result set" {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 		if user.ID == 0 {
 			http.Error(w, "user not found", http.StatusUnauthorized)
+			logger.Error("User not found", "error", "user not found")
 			return
 		}
 
@@ -87,9 +102,10 @@ func handleLogout() http.HandlerFunc {
 
 func handleSession() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user := r.Context().Value(UserKey("user")).(User)
+		user := r.Context().Value(UserKey("user")).(*User)
 		if user.ID == 0 {
 			http.Error(w, "user not found", http.StatusUnauthorized)
+			logger.Error("User not found", "error", "user not found")
 			return
 		}
 
@@ -110,24 +126,31 @@ func handleMagic(conn *pgxpool.Pool) http.HandlerFunc {
 		magicToken := r.PathValue("magicToken")
 		if magicToken == "" {
 			http.Error(w, "magic_token is required", http.StatusBadRequest)
+			logger.Error("Magic token is required", "error", "magic_token is required")
 			return
 		}
 
-		magicLink := getMagicLinkByToken(r.Context(), conn, magicToken)
-		if magicLink.ID == 0 {
-			http.Error(w, "magic link not found", http.StatusNotFound)
+		magicLink, err := getMagicLinkByToken(r.Context(), conn, magicToken)
+		if err != nil {
+			logger.Error("Unable to get magic link by token", "error", err.Error())
+			http.Error(w, "Cannot verify magic link", http.StatusNotFound)
 			return
 		}
 
-		user := getUserByID(r.Context(), conn, magicLink.UserID)
-		if user.ID == 0 {
-			http.Error(w, "user not found", http.StatusNotFound)
+		user, err := getUserByID(r.Context(), conn, magicLink.UserID)
+		if err != nil {
+			logger.Error("Unable to get user by id", "error", err.Error())
+			http.Error(w, "Cannot find user", http.StatusNotFound)
 			return
 		}
 
 		token := newToken()
 
-		insertSession(r.Context(), conn, user.ID, token)
+		if err := insertSession(r.Context(), conn, user.ID, token); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			logger.Error("Unable to insert session", "error", err.Error())
+			return
+		}
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session_token",
@@ -145,22 +168,41 @@ func handleMagic(conn *pgxpool.Pool) http.HandlerFunc {
 
 func handleQR(conn *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user := r.Context().Value(UserKey("user")).(User)
+		user := r.Context().Value(UserKey("user")).(*User)
 		if user.ID == 0 {
 			http.Error(w, "user not found", http.StatusUnauthorized)
+			logger.Error("User not found", "error", "user not found")
 			return
 		}
 
-		magicLink := getMagicLink(r.Context(), conn, user.ID)
-		if magicLink.ID != 0 {
-			w.Write([]byte(magicLink.Token))
+		magicLink, err := getMagicLink(r.Context(), conn, user.ID)
+		if err != nil {
+			logger.Error("Unable to get magic link", "error", err.Error())
+			if !errors.Is(err, pgx.ErrNoRows) && err.Error() != "no rows in result set" {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if magicLink == nil || magicLink.ID == 0 {
+			if _, err := w.Write([]byte(magicLink.Token)); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				logger.Error("Unable to write magic link token", "error", err.Error())
+			}
 			return
 		}
 
 		token := newToken()
-		insertMagicLink(r.Context(), conn, token, user.ID)
+		if err := insertMagicLink(r.Context(), conn, token, user.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			logger.Error("Unable to insert magic link", "error", err.Error())
+			return
+		}
 
-		w.Write([]byte(token))
+		if _, err := w.Write([]byte(token)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			logger.Error("Unable to write magic link token", "error", err.Error())
+			return
+		}
 	}
 }
 
@@ -173,6 +215,7 @@ func handleAuth(conn *pgxpool.Pool) http.HandlerFunc {
 		}
 		if err := decoder.Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			logger.Error("Unable to decode request body", "error", err.Error())
 			return
 		}
 
@@ -181,22 +224,42 @@ func handleAuth(conn *pgxpool.Pool) http.HandlerFunc {
 
 		if username == "" || password == "" {
 			http.Error(w, "username and password are required", http.StatusBadRequest)
+			logger.Error("Username and password are required", "error", "username and password are required")
 			return
 		}
 
-		user := getUser(r.Context(), conn, username)
-		if user.ID == 0 {
-			user = insertUser(r.Context(), conn, username, password)
+		user, err := getUser(r.Context(), conn, username)
+		if err != nil {
+			logger.Error("Unable to get user", "error", err.Error())
+			if !errors.Is(err, pgx.ErrNoRows) && err.Error() != "no rows in result set" {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if user == nil || user.ID == 0 {
+			var err error
+			user, err = insertUser(r.Context(), conn, username, password)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				logger.Error("Unable to insert user", "error", err.Error())
+				return
+			}
 		} else {
-			if !comparePassword(r.Context(), conn, username, password) {
+			valid, err := comparePassword(r.Context(), conn, username, password)
+			if err != nil || !valid {
 				http.Error(w, "invalid username or password", http.StatusUnauthorized)
+				logger.Error("Invalid username or password", "error", "invalid username or password")
 				return
 			}
 		}
 
 		token := newToken()
 
-		insertSession(r.Context(), conn, user.ID, token)
+		if err := insertSession(r.Context(), conn, user.ID, token); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			logger.Error("Unable to insert session", "error", err.Error())
+			return
+		}
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session_token",
@@ -217,27 +280,41 @@ func handleCompleteTask(conn *pgxpool.Pool) http.HandlerFunc {
 		taskIDStr := r.PathValue("taskId")
 		if taskIDStr == "" {
 			http.Error(w, "task_id is required", http.StatusBadRequest)
+			logger.Error("Task ID is required", "error", "task_id is required")
 			return
 		}
 
 		taskID, err := strconv.Atoi(taskIDStr)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			logger.Error("Unable to convert task ID to int", "error", err.Error())
 			return
 		}
 
-		completeTask(r.Context(), conn, taskID)
+		if err := completeTask(r.Context(), conn, taskID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			logger.Error("Unable to complete task", "error", err.Error())
+			return
+		}
 	}
 }
 
 func handleGetTasks(conn *pgxpool.Pool, limit int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user := r.Context().Value(UserKey("user")).(User)
+		user := r.Context().Value(UserKey("user")).(*User)
 		if user.ID == 0 {
 			http.Error(w, "user not found", http.StatusUnauthorized)
+			logger.Error("User not found", "error", "user not found")
 			return
 		}
-		tasks := getTasks(r.Context(), conn, user.ID)
+		tasks, err := getTasks(r.Context(), conn, user.ID)
+		if err != nil {
+			logger.Error("Unable to get tasks", "error", err.Error())
+			if !errors.Is(err, pgx.ErrNoRows) && err.Error() != "no rows in result set" {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 
 		responses := make([]TaskResponse, len(tasks))
 		for i := range tasks {
@@ -249,7 +326,17 @@ func handleGetTasks(conn *pgxpool.Pool, limit int) http.HandlerFunc {
 
 			date := time.Now().Add(-unit * time.Duration(limit-1))
 
-			completions := getCompletions(r.Context(), conn, tasks[i].ID, date)
+			completions, err := getCompletions(r.Context(), conn, tasks[i].ID, date)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				if !errors.Is(err, pgx.ErrNoRows) && err.Error() != "no rows in result set" {
+					logger.Error("Unable to get completions", "error", err.Error())
+					return
+				}
+			}
+			if completions == nil {
+				completions = make([]*Completion, 0)
+			}
 
 			intervalsMap := make(map[string]bool)
 			for j := 0; j < limit; j++ {
@@ -282,14 +369,16 @@ func handleGetTasks(conn *pgxpool.Pool, limit int) http.HandlerFunc {
 
 func handleCreateTask(conn *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user := r.Context().Value(UserKey("user")).(User)
+		user := r.Context().Value(UserKey("user")).(*User)
 		if user.ID == 0 {
 			http.Error(w, "user not found", http.StatusUnauthorized)
+			logger.Error("User not found", "error", "user not found")
 			return
 		}
 
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			logger.Error("Unable to parse form", "error", err.Error())
 			return
 		}
 
@@ -304,6 +393,10 @@ func handleCreateTask(conn *pgxpool.Pool) http.HandlerFunc {
 			UserID:      user.ID,
 		}
 
-		insertTask(r.Context(), conn, t)
+		if err := insertTask(r.Context(), conn, t); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			logger.Error("Unable to insert task", "error", err.Error())
+			return
+		}
 	}
 }
