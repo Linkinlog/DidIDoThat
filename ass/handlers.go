@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
 const (
-	Layout       = time.RFC3339
+	LayoutHourly = "2006-01-02T15Z07:00"
+	Layout       = "2006-01-02Z07:00"
 	previewLimit = 30
 )
 
@@ -22,9 +24,28 @@ func startHTTP(port int, conn *pgx.Conn) {
 	})
 	mux.HandleFunc("POST /api/tasks", handleCreateTask(conn))
 	mux.HandleFunc("GET /api/tasks", handleGetTasks(conn, previewLimit))
+	mux.HandleFunc("POST /api/tasks/{taskId}/complete", handleCompleteTask(conn))
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), mux); err != nil {
 		panic(err)
+	}
+}
+
+func handleCompleteTask(conn *pgx.Conn) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		taskIDStr := r.PathValue("taskId")
+		if taskIDStr == "" {
+			http.Error(w, "task_id is required", http.StatusBadRequest)
+			return
+		}
+
+		taskID, err := strconv.Atoi(taskIDStr)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		completeTask(r.Context(), conn, taskID)
 	}
 }
 
@@ -34,9 +55,9 @@ func handleGetTasks(conn *pgx.Conn, limit int) http.HandlerFunc {
 
 		responses := make([]TaskResponse, len(tasks))
 		for i := range tasks {
-			respLayout := Layout
+			layout := Layout
 			if tasks[i].Interval == Hourly {
-				respLayout = Layout
+				layout = LayoutHourly
 			}
 			unit := tasks[i].Interval.toTime()
 
@@ -46,14 +67,13 @@ func handleGetTasks(conn *pgx.Conn, limit int) http.HandlerFunc {
 
 			intervalsMap := make(map[string]bool)
 			for j := 0; j < limit; j++ {
-				timestamp := date.Add(time.Duration(j) * unit).Format(respLayout)
+				timestamp := date.Add(time.Duration(j) * unit).Format(layout)
 				intervalsMap[timestamp] = false
 			}
 
 			for _, c := range completions {
-				d := date.Add(c.CompletedAt.Sub(date) / unit * unit).Format(respLayout)
-
-				intervalsMap[d] = true
+				timestamp := c.CompletedAt.Format(layout)
+				intervalsMap[timestamp] = true
 			}
 
 			resp := TaskResponse{

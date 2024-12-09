@@ -14,7 +14,6 @@ function createTask(e: Event) {
   e.preventDefault();
   const form = e.target as HTMLFormElement;
   const [name, description, interval] = form.elements as any;
-  creatingTask = false;
 
   tasks = [
     ...tasks,
@@ -22,6 +21,7 @@ function createTask(e: Event) {
       name: name.value,
       description: description.value,
       interval: interval.value,
+      intervals_map: new Map()
     }
   ];
 
@@ -32,18 +32,19 @@ function createTask(e: Event) {
 
   fetch(url, { method: 'POST' });
 
-  // reset values
   name.value = '';
   description.value = '';
   interval.value = '';
+
+  window.location.reload();
 }
 </script>
 
 <main>
-  <h1><i>Did I Do That?</i></h1>
+  <h1><a href="/"><i>Did I Do That?</i></a></h1>
 
   {#if creatingTask}
-    <form on:submit|preventDefault={createTask} id="new-task-form">
+    <form onsubmit={createTask} id="new-task-form">
       <input type="text" placeholder="Task name" required />
       <input type="text" placeholder="Task description" />
       <select name="interval" required >
@@ -57,12 +58,12 @@ function createTask(e: Event) {
     </form>
   {:else}
     <div id="tasks-container">
+      <div id="get-started-container" role="button" tabindex="0" onclick={() =>creatingTask = true}>
+	<p>Click here to create a new task</p>
+      </div>
       {#each tasks as task}
 	<Task task={task} totalIntervals={30} />
       {/each}
-      <div id="get-started-container" role="button" tabindex="0" on:click={() =>creatingTask = true}>
-	<p>Click here to create a new task</p>
-      </div>
     </div>
   {/if}
 </main>

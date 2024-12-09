@@ -19,13 +19,13 @@ CREATE TABLE if not exists tasks (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     interval interval_enum NOT NULL
 );
 
 CREATE TABLE if not exists completions (
 	task_id INT NOT NULL,
-	completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	completed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS completions_task_id_completed_at_idx ON completions (task_id, completed_at);
@@ -68,20 +68,20 @@ func completeTask(ctx context.Context, conn *pgx.Conn, taskID int) {
 	interval := ""
 	switch task.Interval {
 	case Hourly:
-		interval = "1 hour"
+		interval = "NOW() -INTERVAL 1 hour"
 	case Daily:
-		interval = "1 day"
+		interval = "NOW() -INTERVAL 1 day"
 	case Weekly:
-		interval = "1 week"
+		interval = "NOW() -INTERVAL 1 week"
 	case Monthly:
-		interval = "1 month"
+		interval = "NOW() -INTERVAL 1 month"
 	}
 
 	query := `
 SELECT task_id, completed_at
 FROM completions
 WHERE task_id = $1
-AND completed_at > NOW() - INTERVAL $2`
+AND completed_at > $2`
 
 	rows, err := conn.Query(ctx, query, taskID, interval)
 	if err != nil {
