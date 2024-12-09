@@ -81,7 +81,7 @@ function completeTask(task: Task) {
 
   let activityText = taskElement.querySelector(".activity-text");
 
-  let completeBtn = taskElement.querySelector(".complete-button");
+  let completeBtn = taskElement.querySelector(".complete-btn");
 
   interval.classList.add("completed");
   activityText.textContent = activityTextFormatted(task);
@@ -92,7 +92,7 @@ function completeTask(task: Task) {
 
 <div class="task" data-id={task.id}>
   {#if !isUpToDate(task)}
-    <button class="complete-button" onclick={() => completeTask(task)}>Complete</button>
+    <button class="complete-btn" onclick={() => completeTask(task)}>Mark Completed</button>
   {/if}
   <div class="task-details">
     <div class="task-header">

@@ -1,9 +1,12 @@
 # TODOs
 - [ ] Add a description of the project
-- [ ] Clicking more qr codes makes more, it should only make one
-- [ ] Alert user that new qr codes destroy old ones
+- [x] Clicking more qr codes makes more, it should only make one
+- [x] ~~Alert user that new qr codes destroy old ones~~ We just don't destroy old ones until a new one is made, which isnt possible yet
+- [ ] Make it possible to regenerate qr codes
 - [ ] Alert user that we even use qr codes for auth, probably early on
 - [ ] We are using http cookies
 - [ ] Add a favicon
 - [ ] error handling
 - [ ] we probably want a backup to the qr codes cause it might be pretty annoying
+- [ ] finish cr(ud) operations
+- [ ] sort taks based on date

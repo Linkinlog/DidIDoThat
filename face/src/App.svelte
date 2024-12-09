@@ -75,7 +75,7 @@ function logout() {
   window.location.reload();
 }
 
-async function getLoginQR() {
+async function getLoginQR(e: Event) {
   let url = new URL('/api/auth/qr', window.location.href);
   const response = await fetch(url);
 
@@ -86,22 +86,26 @@ async function getLoginQR() {
   const qrURL = await response.text();
 
   const fullQrURL = new URL(`/api/auth/magic/${qrURL}`, window.location.href);
+  
+  const profilePage = document.getElementById('profile-page');
 
   const anchor = document.createElement('a');
   anchor.href = fullQrURL.href;
+  anchor.textContent = 'Or copy this link to login';
+  anchor.id = 'qr-link';
 
-  const profilePage = document.getElementById('profile-page');
-  profilePage.appendChild(anchor);
+  if (!document.getElementById('qr-link')) {
+    profilePage.appendChild(anchor);
+  }
 
-
-  const qrCanvas = document.createElement('canvas');
+  const qrCanvas = document.getElementById('qr-code') as HTMLCanvasElement;
   qrCanvas.height = 600;
   qrCanvas.width = 200;
   const qrContext = qrCanvas.getContext('2d');
 
-  anchor.appendChild(qrCanvas);
-
   QRCode.toCanvas(qrCanvas, fullQrURL.href);
+
+  (e.target as HTMLButtonElement).disabled = true;
 }
 </script>
 
@@ -135,9 +139,12 @@ async function getLoginQR() {
     {#if showProfile}
       <div id="profile-page">
 	<p>Username: {localStorage.getItem('username')}</p>
+	<p>Login quickly by scanning the QR code below</p>
 	<button
-	  onclick={() => getLoginQR()}
-	>Get login QR code</button>
+	  class="get-qr-btn"
+	  onclick={(e) => getLoginQR(e)}
+	>Get QR code</button>
+	<canvas id="qr-code"></canvas>
       </div>
     {:else}
       {#if !loggedIn}
@@ -145,16 +152,17 @@ async function getLoginQR() {
       {:else}
 	{#if creatingTask}
 	  <form onsubmit={createTask} id="new-task-form">
-	    <input type="text" placeholder="Task name" required />
-	    <input type="text" placeholder="Task description" />
-	    <select name="interval" required >
+	    <input class="input-field" type="text" placeholder="Task name" required />
+	    <input class="input-field" type="text" placeholder="Task description" />
+	    <label for="interval">Interval</label>
+	    <select class="input-field"  name="interval" required >
 	      <option value="hourly">Hourly</option>
 	      <option value="daily">Daily</option>
 	      <option value="weekly">Weekly</option>
 	      <option value="monthly">Monthly</option>
 	      <option value="yearly">Yearly</option>
 	    </select>
-	    <button type="submit">Create task</button>
+	    <button class="create-task-btn" type="submit">Create task</button>
 	  </form>
 	{:else}
 	  <div id="tasks-container">

@@ -153,10 +153,14 @@ h1 {
 #new-task-form {
   display: flex;
   flex-direction: column;
-  align-items: space-between;
+  align-items: center;
   justify-content: center;
   margin-top: 2rem;
   gap: 1rem;
+}
+
+.input-field {
+  min-width: 15rem;
 }
 
 .tooltip {
@@ -191,4 +195,69 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 1rem;
+}
+
+.complete-btn {
+  background-color: #4CAF50; 
+  color: white; 
+  border: none;
+  border-radius: 5px;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.complete-btn:hover {
+  background-color: #45a049; 
+  transform: scale(1.05); 
+}
+
+.complete-btn:active {
+  background-color: #3e8e41; 
+  transform: scale(0.95); 
+}
+
+.create-task-btn {
+  background-color: #808080; 
+  color: white; 
+  border: none;
+  border-radius: 5px;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.create-task-btn:hover {
+  background-color: #696969; 
+  transform: scale(1.05); 
+}
+
+.create-task-btn:active {
+  background-color: #505050; 
+  transform: scale(0.95); 
+}
+
+.get-qr-btn {
+  background-color: #5a5a5a; 
+  color: #ffffff; 
+  border: 2px solid #808080; 
+  border-radius: 5px;
+  padding: 10px 20px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.get-qr-btn:hover {
+  background-color: #707070; 
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); 
+  transform: scale(1.05); 
+}
+
+.get-qr-btn:active {
+  background-color: #4a4a4a; 
+  transform: scale(0.95); 
 }
