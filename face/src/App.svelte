@@ -56,15 +56,29 @@ function createTask(e: Event) {
 async function login(e: Event) {
   e.preventDefault();
   const form = e.target as HTMLFormElement;
-  const [username] = form.elements as any;
+  const [username, password] = form.elements as any;
 
-  let url = new URL('/api/auth', window.location.href);
-  url.searchParams.append('username', username.value);
-
-  const response = await fetch(url, { method: 'POST' });
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      username: username.value,
+      password: password.value
+    })
+  });
 
   if (response.status < 300) {
     window.location.reload();
+  } else {
+    const toast = document.getElementById('toast');
+    toast.textContent = await response.text();
+    toast.classList.add('error');
+    toast.classList.remove('hidden');
+    setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 3000);
   }
 }
 
@@ -127,12 +141,15 @@ async function getLoginQR(e: Event) {
       >Login</button>
     {/if}
   </nav>
+  <div id="toast" class="hidden"></div>
 
   <h1><a href="/"><i>Did I Do That?</i></a></h1>
 
   {#if showLogin}
+    <p>Log in or sign up here</p>
     <form onsubmit={login} id="login-form">
       <input class="login-username" type="text" placeholder="Username" required />
+      <input class="login-password" type="password" placeholder="Password" required />
       <button type="submit">Login</button>
     </form>
   {:else}

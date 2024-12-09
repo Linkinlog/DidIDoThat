@@ -29,7 +29,7 @@ func startHTTP(port int, conn *pgxpool.Pool) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mux.HandleFunc("POST /api/auth", handleAuth(conn))
+	mux.HandleFunc("POST /api/auth/login", handleAuth(conn))
 	mux.HandleFunc("GET /api/auth/logout", handleLogout())
 	mux.HandleFunc("GET /api/auth/magic/{magicToken}", handleMagic(conn))
 
@@ -78,8 +78,7 @@ func handleLogout() http.HandlerFunc {
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
-			// TODO uncomment out when we go live
-			// Secure:   true,
+			Secure:   isProduction(),
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   60 * 60,
 		})
@@ -135,8 +134,7 @@ func handleMagic(conn *pgxpool.Pool) http.HandlerFunc {
 			Value:    token,
 			Path:     "/",
 			HttpOnly: true,
-			// TODO uncomment out when we go live
-			// Secure:   true,
+			Secure:   isProduction(),
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   60 * 60,
 		})
@@ -168,25 +166,33 @@ func handleQR(conn *pgxpool.Pool) http.HandlerFunc {
 
 func handleAuth(conn *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := decoder.Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		username := r.Form.Get("username")
+		username := body.Username
+		password := body.Password
 
-		if username == "" {
-			http.Error(w, "username is required", http.StatusBadRequest)
+		if username == "" || password == "" {
+			http.Error(w, "username and password are required", http.StatusBadRequest)
 			return
 		}
 
 		user := getUser(r.Context(), conn, username)
-		if user.ID != 0 {
-			http.Error(w, "user already exists", http.StatusConflict)
-			return
+		if user.ID == 0 {
+			user = insertUser(r.Context(), conn, username, password)
+		} else {
+			if !comparePassword(r.Context(), conn, username, password) {
+				http.Error(w, "invalid username or password", http.StatusUnauthorized)
+				return
+			}
 		}
-
-		user = insertUser(r.Context(), conn, username)
 
 		token := newToken()
 
@@ -197,8 +203,7 @@ func handleAuth(conn *pgxpool.Pool) http.HandlerFunc {
 			Value:    token,
 			Path:     "/",
 			HttpOnly: true,
-			// TODO uncomment out when we go live
-			// Secure:   true,
+			Secure:   isProduction(),
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   60 * 60,
 		})

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func createTables(ctx context.Context, conn *pgxpool.Pool) {
@@ -34,6 +35,7 @@ CREATE TABLE if not exists completions (
 CREATE TABLE if not exists users (
 	id SERIAL PRIMARY KEY,
 	username VARCHAR(255) NOT NULL UNIQUE,
+	password VARCHAR(255) NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -169,10 +171,33 @@ WHERE id = $1`, id).Scan(&user.ID, &user.Username, &user.CreatedAt)
 	return user
 }
 
-func insertUser(ctx context.Context, conn *pgxpool.Pool, username string) User {
-	_, err := conn.Exec(ctx, `
-INSERT INTO users (username)
-VALUES ($1)`, username)
+func comparePassword(ctx context.Context, conn *pgxpool.Pool, username, password string) bool {
+	var hashedPassword string
+	err := conn.QueryRow(ctx, `
+SELECT password
+FROM users
+WHERE username = $1`, username).Scan(&hashedPassword)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false
+	}
+	if err != nil {
+		panic(err)
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+
+	return err == nil
+}
+
+func insertUser(ctx context.Context, conn *pgxpool.Pool, username string, password string) User {
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = conn.Exec(ctx, `
+INSERT INTO users (username, password)
+VALUES ($1, $2)`, username, passwordHash)
 	if err != nil {
 		panic(err)
 	}
