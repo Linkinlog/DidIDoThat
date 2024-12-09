@@ -5,8 +5,6 @@ services:
       context: ./ass
       dockerfile: ./Dockerfile
     restart: always
-    ports:
-      - "8008:8008"
     environment:
       DATABASE_URL: ${DATABASE_URL}
     depends_on:
@@ -21,7 +19,7 @@ services:
     shm_size: 128mb
     user: postgres
     ports:
-      - "${SQUEAL_PORT:-5432}:5432"
+      - "${DIDT_SQUEAL_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -40,7 +38,7 @@ services:
     image: caddy:latest
     restart: always
     ports:
-      - "80:80"
+      - "${DIDT_CADDY_PORT:-8025}:8025"
     volumes:
       - ./face/dist:/srv
       - ./Caddyfile:/etc/caddy/Caddyfile

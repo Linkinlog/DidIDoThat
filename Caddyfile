@@ -1,4 +1,4 @@
-http://didt.test:80 {
+:8025 {
     root * /srv
 
     reverse_proxy /api/* app:8008
