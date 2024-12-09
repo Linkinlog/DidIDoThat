@@ -1,13 +1,27 @@
 <script lang="ts">
 import Task from './lib/Task.svelte';
+import QRCode from 'qrcode';
 
 let creatingTask = false;
+let showLogin = false;
+let showProfile = false;
+let loggedIn = false;
 
 let tasks: Task[] = [];
 
 $: (async () => {
   const response = await fetch('/api/tasks');
   tasks = await response.json();
+})();
+
+$: (async () => {
+  const response = await fetch('/api/auth/session');
+  if (response.status >= 300) {
+    return;
+  }
+  const { username } = await response.json();
+  localStorage.setItem('username', username);
+  loggedIn = true;
 })();
 
 function createTask(e: Event) {
@@ -38,36 +52,121 @@ function createTask(e: Event) {
 
   window.location.reload();
 }
+
+async function login(e: Event) {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const [username] = form.elements as any;
+
+  let url = new URL('/api/auth', window.location.href);
+  url.searchParams.append('username', username.value);
+
+  const response = await fetch(url, { method: 'POST' });
+
+  if (response.status < 300) {
+    window.location.reload();
+  }
+}
+
+function logout() {
+  localStorage.removeItem('username');
+  loggedIn = false;
+  fetch('/api/auth/logout')
+  window.location.reload();
+}
+
+async function getLoginQR() {
+  let url = new URL('/api/auth/qr', window.location.href);
+  const response = await fetch(url);
+
+  if (response.status >= 300) {
+    return;
+  }
+
+  const qrURL = await response.text();
+
+  const fullQrURL = new URL(`/api/auth/magic/${qrURL}`, window.location.href);
+
+  const anchor = document.createElement('a');
+  anchor.href = fullQrURL.href;
+
+  const profilePage = document.getElementById('profile-page');
+  profilePage.appendChild(anchor);
+
+
+  const qrCanvas = document.createElement('canvas');
+  qrCanvas.height = 600;
+  qrCanvas.width = 200;
+  const qrContext = qrCanvas.getContext('2d');
+
+  anchor.appendChild(qrCanvas);
+
+  QRCode.toCanvas(qrCanvas, fullQrURL.href);
+}
 </script>
 
 <main>
+  <nav id="main-nav">
+    {#if loggedIn}
+      <button
+	class="nav-link"
+	onclick={() => showProfile = !showProfile}
+      >Profile</button>
+      <button
+	class="nav-link"
+	onclick={logout}
+      >Logout</button>
+    {:else}
+      <button
+	class="nav-link"
+	onclick={() => showLogin = !showLogin}
+      >Login</button>
+    {/if}
+  </nav>
+
   <h1><a href="/"><i>Did I Do That?</i></a></h1>
 
-  {#if creatingTask}
-    <form onsubmit={createTask} id="new-task-form">
-      <input type="text" placeholder="Task name" required />
-      <input type="text" placeholder="Task description" />
-      <select name="interval" required >
-	<option value="hourly">Hourly</option>
-	<option value="daily">Daily</option>
-	<option value="weekly">Weekly</option>
-	<option value="monthly">Monthly</option>
-	<option value="yearly">Yearly</option>
-      </select>
-      <button type="submit">Create task</button>
+  {#if showLogin}
+    <form onsubmit={login} id="login-form">
+      <input class="login-username" type="text" placeholder="Username" required />
+      <button type="submit">Login</button>
     </form>
   {:else}
-    <div id="tasks-container">
-      <div id="get-started-container" role="button" tabindex="0" onclick={() =>creatingTask = true}>
-	<p>Click here to create a new task</p>
+    {#if showProfile}
+      <div id="profile-page">
+	<p>Username: {localStorage.getItem('username')}</p>
+	<button
+	  onclick={() => getLoginQR()}
+	>Get login QR code</button>
       </div>
-      {#each tasks as task}
-	<Task task={task} totalIntervals={30} />
-      {/each}
-    </div>
+    {:else}
+      {#if !loggedIn}
+	<p>Log in to see your tasks</p>
+      {:else}
+	{#if creatingTask}
+	  <form onsubmit={createTask} id="new-task-form">
+	    <input type="text" placeholder="Task name" required />
+	    <input type="text" placeholder="Task description" />
+	    <select name="interval" required >
+	      <option value="hourly">Hourly</option>
+	      <option value="daily">Daily</option>
+	      <option value="weekly">Weekly</option>
+	      <option value="monthly">Monthly</option>
+	      <option value="yearly">Yearly</option>
+	    </select>
+	    <button type="submit">Create task</button>
+	  </form>
+	{:else}
+	  <div id="tasks-container">
+	    <div id="get-started-container" role="button" tabindex="0" onclick={() =>creatingTask = true}>
+	      <p>Click here to create a new task</p>
+	    </div>
+	    {#each tasks as task}
+	      <Task task={task} totalIntervals={30} />
+	    {/each}
+	  </div>
+	{/if}
+      {/if}
+    {/if}
   {/if}
 </main>
-
-<style>
-
-</style>

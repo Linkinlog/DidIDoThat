@@ -1,9 +1,39 @@
 package main
 
 import (
+	"crypto/rand"
+	"fmt"
 	"strings"
 	"time"
 )
+
+type MagicLink struct {
+	ID        int
+	UserID    int
+	Token     string
+	CreatedAt time.Time
+}
+
+type Session struct {
+	ID        int
+	UserID    int
+	Token     string
+	CreatedAt time.Time
+}
+
+func newToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
+type UserKey string
+
+type User struct {
+	ID        int
+	Username  string
+	CreatedAt time.Time
+}
 
 func fromString(s string) Interval {
 	s = strings.ToLower(s)

@@ -38,8 +38,24 @@ h1 {
   line-height: 1.1;
 }
 
+.nav-link {
+  background: none!important;
+  border: none;
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+#main-nav {
+  display: flex;
+  justify-content: flex-start;
+}
+
 #app {
   min-height: 100vh;
+  min-width: 50vw;
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
@@ -167,4 +183,12 @@ h1 {
 
 .tooltip:hover .tooltiptext {
   visibility: visible;
+}
+
+#profile-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
 }

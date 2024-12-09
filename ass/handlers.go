@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -16,22 +17,197 @@ const (
 	previewLimit = 30
 )
 
-func startHTTP(port int, conn *pgx.Conn) {
+func startHTTP(port int, conn *pgxpool.Pool) {
 	mux := http.NewServeMux()
 
+	// unauthorized
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		if err := conn.Ping(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("POST /api/tasks", handleCreateTask(conn))
-	mux.HandleFunc("GET /api/tasks", handleGetTasks(conn, previewLimit))
+
+	mux.HandleFunc("POST /api/auth", handleAuth(conn))
+	mux.HandleFunc("GET /api/auth/logout", handleLogout())
+	mux.HandleFunc("GET /api/auth/magic/{magicToken}", handleMagic(conn))
+
+	// authorized
+	mux.HandleFunc("GET /api/tasks", withUser(conn, handleGetTasks(conn, previewLimit)))
+	mux.HandleFunc("POST /api/tasks", withUser(conn, handleCreateTask(conn)))
 	mux.HandleFunc("POST /api/tasks/{taskId}/complete", handleCompleteTask(conn))
+	mux.HandleFunc("GET /api/auth/session", withUser(conn, handleSession()))
+	mux.HandleFunc("GET /api/auth/qr", withUser(conn, handleQR(conn)))
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), mux); err != nil {
 		panic(err)
 	}
 }
 
-func handleCompleteTask(conn *pgx.Conn) http.HandlerFunc {
+func withUser(conn *pgxpool.Pool, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session_token")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		session := getSession(r.Context(), conn, cookie.Value)
+		if session.ID == 0 {
+			http.Error(w, "session not found", http.StatusUnauthorized)
+			return
+		}
+
+		user := getUserByID(r.Context(), conn, session.UserID)
+		if user.ID == 0 {
+			http.Error(w, "user not found", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), UserKey("user"), user)
+
+		h(w, r.WithContext(ctx))
+	}
+}
+
+func handleLogout() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_token",
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			// TODO uncomment out when we go live
+			// Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   60 * 60,
+		})
+	}
+}
+
+func handleSession() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := r.Context().Value(UserKey("user")).(User)
+		if user.ID == 0 {
+			http.Error(w, "user not found", http.StatusUnauthorized)
+			return
+		}
+
+		userResp := struct {
+			Username string `json:"username"`
+		}{
+			Username: user.Username,
+		}
+
+		if err := json.NewEncoder(w).Encode(userResp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
+func handleMagic(conn *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		magicToken := r.PathValue("magicToken")
+		if magicToken == "" {
+			http.Error(w, "magic_token is required", http.StatusBadRequest)
+			return
+		}
+
+		magicLink := getMagicLinkByToken(r.Context(), conn, magicToken)
+		if magicLink.ID == 0 {
+			http.Error(w, "magic link not found", http.StatusNotFound)
+			return
+		}
+
+		user := getUserByID(r.Context(), conn, magicLink.UserID)
+		if user.ID == 0 {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+
+		token := newToken()
+
+		insertSession(r.Context(), conn, user.ID, token)
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_token",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			// TODO uncomment out when we go live
+			// Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   60 * 60,
+		})
+
+		http.Redirect(w, r, "/", http.StatusFound)
+	}
+}
+
+func handleQR(conn *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := r.Context().Value(UserKey("user")).(User)
+		if user.ID == 0 {
+			http.Error(w, "user not found", http.StatusUnauthorized)
+			return
+		}
+
+		magicLink := getMagicLink(r.Context(), conn, user.ID)
+		if magicLink.ID != 0 {
+			w.Write([]byte(magicLink.Token))
+			return
+		}
+
+		token := newToken()
+		insertMagicLink(r.Context(), conn, token, user.ID)
+
+		w.Write([]byte(token))
+	}
+}
+
+func handleAuth(conn *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		username := r.Form.Get("username")
+
+		if username == "" {
+			http.Error(w, "username is required", http.StatusBadRequest)
+			return
+		}
+
+		user := getUser(r.Context(), conn, username)
+		if user.ID != 0 {
+			http.Error(w, "user already exists", http.StatusConflict)
+			return
+		}
+
+		user = insertUser(r.Context(), conn, username)
+
+		token := newToken()
+
+		insertSession(r.Context(), conn, user.ID, token)
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_token",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			// TODO uncomment out when we go live
+			// Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   60 * 60,
+		})
+
+		http.Redirect(w, r, "/", http.StatusFound)
+	}
+}
+
+func handleCompleteTask(conn *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		taskIDStr := r.PathValue("taskId")
 		if taskIDStr == "" {
@@ -49,9 +225,14 @@ func handleCompleteTask(conn *pgx.Conn) http.HandlerFunc {
 	}
 }
 
-func handleGetTasks(conn *pgx.Conn, limit int) http.HandlerFunc {
+func handleGetTasks(conn *pgxpool.Pool, limit int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tasks := getTasks(r.Context(), conn)
+		user := r.Context().Value(UserKey("user")).(User)
+		if user.ID == 0 {
+			http.Error(w, "user not found", http.StatusUnauthorized)
+			return
+		}
+		tasks := getTasks(r.Context(), conn, user.ID)
 
 		responses := make([]TaskResponse, len(tasks))
 		for i := range tasks {
@@ -94,8 +275,14 @@ func handleGetTasks(conn *pgx.Conn, limit int) http.HandlerFunc {
 	}
 }
 
-func handleCreateTask(conn *pgx.Conn) http.HandlerFunc {
+func handleCreateTask(conn *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		user := r.Context().Value(UserKey("user")).(User)
+		if user.ID == 0 {
+			http.Error(w, "user not found", http.StatusUnauthorized)
+			return
+		}
+
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -109,6 +296,7 @@ func handleCreateTask(conn *pgx.Conn) http.HandlerFunc {
 			Name:        name,
 			Description: description,
 			Interval:    interval,
+			UserID:      user.ID,
 		}
 
 		insertTask(r.Context(), conn, t)
