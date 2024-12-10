@@ -32,7 +32,7 @@ func main() {
 		}
 	}
 
-	if err := startHTTP(8008, conn); err != nil {
+	if err := startHTTP(port(), conn); err != nil {
 		logger.Error("Unable to start HTTP server", "error", err.Error())
 		os.Exit(1)
 	}

@@ -8,12 +8,3 @@ RUN bun install
 COPY . .
 
 RUN bun run build
-
-FROM caddy:latest as frontend
-
-COPY --from=frontend-builder /app/dist /srv
-
-EXPOSE 80
-
-CMD ["caddy", "file-server", "--root", "/srv"]
-

@@ -1,9 +1,23 @@
-:8025 {
-    root * /srv
+http://fart.test:80 {
+	root * /srv
 
-    reverse_proxy /api/* app:8008
+	reverse_proxy /api/* app:8019
 
-    file_server
-
+	file_server
 }
 
+http://didt.dahlton.org:80 {
+	root * /srv
+
+	reverse_proxy /api/* app:8019
+
+	file_server
+}
+
+http://didt.dahlton.org {
+	root * /srv
+
+	reverse_proxy /api/* app:8019
+
+	file_server
+}
