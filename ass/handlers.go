@@ -11,7 +11,6 @@ import (
 
 	"github.com/jackc/pgx"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gitlab.com/linkinlog/DidIDoThat/dist"
 )
 
 const (
@@ -24,8 +23,6 @@ func startHTTP(port int, conn *pgxpool.Pool) error {
 	mux := http.NewServeMux()
 
 	// unauthorized
-	mux.Handle("GET /", http.FileServer(http.FS(dist.NewAssets())))
-
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		if err := conn.Ping(r.Context()); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -46,7 +43,14 @@ func startHTTP(port int, conn *pgxpool.Pool) error {
 	mux.HandleFunc("GET /api/auth/session", withUser(conn, handleSession()))
 	mux.HandleFunc("GET /api/auth/qr", withUser(conn, handleQR(conn)))
 
+	fs := http.FileServer(http.Dir("/dist"))
+	mux.Handle("/", fs)
+
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+}
+
+func hello(w http.ResponseWriter, _ *http.Request) {
+	w.Write([]byte("Hello, World!"))
 }
 
 func withUser(conn *pgxpool.Pool, h http.HandlerFunc) http.HandlerFunc {

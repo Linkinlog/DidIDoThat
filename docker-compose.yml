@@ -1,5 +1,5 @@
 services:
-  app:
+  ass:
     build:
       context: ./ass
       dockerfile: ./Dockerfile
@@ -8,6 +8,8 @@ services:
     restart: always
     environment:
       DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./face/dist:/dist
     depends_on:
       db:
         condition: service_healthy
