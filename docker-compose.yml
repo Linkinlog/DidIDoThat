@@ -1,9 +1,10 @@
 services:
   app:
-    container_name: app
     build:
       context: ./ass
       dockerfile: ./Dockerfile
+    ports:
+      - "${DIDT_APP_PORT:-8019}:8019"
     restart: always
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -13,7 +14,6 @@ services:
     networks:
       - didt
   db:
-    container_name: db
     image: postgres
     restart: always
     shm_size: 128mb
@@ -29,19 +29,6 @@ services:
       interval: 2s
       timeout: 5s
       retries: 10
-    networks:
-      - didt
-  caddy:
-    container_name: caddy
-    image: caddy:latest
-    restart: always
-    ports:
-      - "${DIDT_CADDY_PORT:-80}:80"
-    volumes:
-      - ./face/dist:/srv
-      - ./Caddyfile:/etc/caddy/Caddyfile
-    depends_on:
-      - app
     networks:
       - didt
 volumes:
